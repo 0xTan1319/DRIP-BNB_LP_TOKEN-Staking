@@ -383,15 +383,11 @@ contract DripStaking is Ownable, ReentrancyGuard {
     /// @param _amount transfer DRIP amounts.
     function _safeTransfer(address _to, uint256 _amount) internal {
         if (_amount > 0) {
-            uint256 vaultBalance = DRIP.balanceOf(vaultAddress);
-            // Check whether Tax Vault has enough DRIP. If not, Mint from the Drip contract.
-            if (vaultBalance.div(10) < _amount) {
-                DRIP.mint(address(this), _amount - vaultBalance.div(10));
+            uint256 vaultBalance = DRIP.balanceOf(address(this));
+            if (vaultBalance < _amount) {
+                DRIP.mint(address(this), _amount - vaultBalance);
             }
 
-            IVault(vaultAddress).withdraw(vaultBalance);
-
-            DRIP.transfer(address(0), vaultBalance.sub(vaultBalance.div(10)));            
             DRIP.transfer(_to, _amount);
         }
     }
