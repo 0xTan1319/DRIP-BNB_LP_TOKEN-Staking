@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import "./interfaces/IBEP20.sol";
-import "./interfaces/IVault.sol";
+import "./interfaces/ITreasury.sol";
 
 abstract contract Context {
     function _msgSender() internal view virtual returns (address) {
@@ -246,8 +246,9 @@ contract DripStaking is Ownable, ReentrancyGuard {
     IBEP20 public lpToken;
     /// @notice Address of DRIP contract.
     IBEP20 public DRIP;
-    /// @notice Address of Vault contract address.
-    address public vaultAddress;
+    /// @notice Address of Treasury contract.
+    ITreasury public TREASURY;
+    
 
     /// @notice 
     uint256 public constant ACC_DRIP_PRECISION = 1e18;
@@ -267,7 +268,6 @@ contract DripStaking is Ownable, ReentrancyGuard {
         DRIP    = IBEP20(0x3e720E59E680CBaeEB11AD456faf3FA6F3801EDC);
         
         lpToken = IBEP20(0xB17E674a4B28958A0eF77E608B4fE94c23AceE29);
-        vaultAddress = 0xBFF8a1F9B5165B787a00659216D7313354D25472;
     }
 
     /// @notice View function for checking pending DRIP rewards.
@@ -383,13 +383,23 @@ contract DripStaking is Ownable, ReentrancyGuard {
     /// @param _amount transfer DRIP amounts.
     function _safeTransfer(address _to, uint256 _amount) internal {
         if (_amount > 0) {
-            uint256 vaultBalance = DRIP.balanceOf(address(this));
-            if (vaultBalance < _amount) {
-                DRIP.mint(address(this), _amount - vaultBalance);
+            TREASURY.claim();
+            uint256 contractBalance = DRIP.balanceOf(address(this));
+
+            // Check whether Staking Contract has enough DRIP. If not, Mint from the Drip contract.
+            if (contractBalance < _amount) {
+                DRIP.mint(address(this), _amount - contractBalance);
             }
 
+            // Transfer DRIP token to users
             DRIP.transfer(_to, _amount);
         }
     }
-    
+
+    /// @notice Update TREASURY contract.
+    /// @param _newTreasury Treasury Contract address.
+    function settlePendingDrip(address _newTreasury) external onlyOwner {
+        require(_newTreasury != address(0) && _newTreasury != address(TREASURY), "Not Zero Address");
+        TREASURY = ITreasury(_newTreasury);
+    }
 }
