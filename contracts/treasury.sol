@@ -1,10 +1,102 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/IBEP20.sol";
 import "./interfaces/IVault.sol";
+
+
+abstract contract Context {
+    function _msgSender() internal view virtual returns (address) {
+        return msg.sender;
+    }
+
+    function _msgData() internal view virtual returns (bytes calldata) {
+        return msg.data;
+    }
+}
+
+abstract contract Ownable is Context {
+    address private _owner;
+
+    /**
+     * @dev The caller account is not authorized to perform an operation.
+     */
+    error OwnableUnauthorizedAccount(address account);
+
+    /**
+     * @dev The owner is not a valid owner account. (eg. `address(0)`)
+     */
+    error OwnableInvalidOwner(address owner);
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /**
+     * @dev Initializes the contract setting the address provided by the deployer as the initial owner.
+     */
+    constructor(address initialOwner) {
+        if (initialOwner == address(0)) {
+            revert OwnableInvalidOwner(address(0));
+        }
+        _transferOwnership(initialOwner);
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+        _checkOwner();
+        _;
+    }
+
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view virtual returns (address) {
+        return _owner;
+    }
+
+    /**
+     * @dev Throws if the sender is not the owner.
+     */
+    function _checkOwner() internal view virtual {
+        if (owner() != _msgSender()) {
+            revert OwnableUnauthorizedAccount(_msgSender());
+        }
+    }
+
+    /**
+     * @dev Leaves the contract without owner. It will not be possible to call
+     * `onlyOwner` functions. Can only be called by the current owner.
+     *
+     * NOTE: Renouncing ownership will leave the contract without an owner,
+     * thereby disabling any functionality that is only available to the owner.
+     */
+    function renounceOwnership() public virtual onlyOwner {
+        _transferOwnership(address(0));
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Can only be called by the current owner.
+     */
+    function transferOwnership(address newOwner) public virtual onlyOwner {
+        if (newOwner == address(0)) {
+            revert OwnableInvalidOwner(address(0));
+        }
+        _transferOwnership(newOwner);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Internal function without access restriction.
+     */
+    function _transferOwnership(address newOwner) internal virtual {
+        address oldOwner = _owner;
+        _owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+}
 
 /**
  * @title SafeMath
@@ -56,45 +148,87 @@ contract Treasury is Ownable {
     using SafeMath for uint256;
 
     IBEP20 internal DRIP;  // address of the BEP20 token traded on this contract
-    IVault internal Vault; // address of the Vault contract 
+    IVault internal VAULT; // address of the Vault contract 
 
     address public stakingContract;
-    uint256 public lastDepositTime;
+
+    uint256 public lastTaxTransferTime;
+    uint256 public lastPayoutTime;
+
+    uint256 public COOL_DOWN = 5 minutes;
+    uint256 public PAYOUT_RATE = 1;
 
 
     // We receive Drip token on this vault
     constructor() Ownable(_msgSender()) {
         DRIP = IBEP20(0x20f663CEa80FaCE82ACDFA3aAE6862d246cE0333);
-        Vault = IVault(0xBFF8a1F9B5165B787a00659216D7313354D25472);
+        VAULT = IVault(0xBFF8a1F9B5165B787a00659216D7313354D25472);
     }
 
-
-    function setStakingContract(address _stakingContract) public onlyOwner {
+    /// @notice Set Staking Contract address Function.
+    /// @param _stakingContract Address of the staking contract.
+    function setStakingContract(address _stakingContract) external onlyOwner {
         require(_stakingContract != address(0) && _stakingContract != stakingContract, "Not Zero Address");
         stakingContract = _stakingContract;
     }
+
+
+    /// @notice Set Cool Down Time Function.
+    /// @param _newDuration New Cooldown duartion.
+    function setCooldownTime(uint256 _newDuration) external onlyOwner {
+        require(_newDuration != 0, "Not zero second duration");
+        COOL_DOWN = _newDuration;
+    }
     
-    function deposit() public {
-        if (lastDepositTime == 0) {
-            lastDepositTime = block.timestamp;
-        } else {
-            require(
-                lastDepositTime + 86000 < block.timestamp 
-                  && block.timestamp < lastDepositTime + 87000, 
-                "Invalid Time Range");
+    /// @notice Set PayoutRate Function.
+    /// @param _newRate New Payout Rate.
+    function setPayoutRate(uint256 _newRate) external onlyOwner {
+        require(_newRate != 0, "Not zero can be payout rate");
+        PAYOUT_RATE = _newRate;
+    }
+
+    /// @notice Set PayoutRate Function.
+    function claim() external {
+        
+        // Check if now is after COOL_DOWN time
+        if (lastTaxTransferTime + COOL_DOWN < block.timestamp) {
+
+            // Get amount of Tax Vault contraact and withdraw all
+            uint256 taxBalance = DRIP.balanceOf(address(VAULT));
+            VAULT.withdraw(taxBalance);
+
+            // Get 10% of the Tax Vault amount
+            uint256 pureBalance = taxBalance.div(10);
+
+            // Burn 90% of the Tax Vault 
+            DRIP.transfer(address(0), taxBalance.sub(pureBalance));
+
+            lastTaxTransferTime = block.timestamp;
         }
 
-        uint256 taxBalance = DRIP.balanceOf(stakingContract);
-        Vault.withdraw(taxBalance);
-
-        uint256 pureBalance = taxBalance.div(10);
-
-        DRIP.transfer(address(0), taxBalance.sub(pureBalance));
-
+        // Get Treasury Balance and transfer 1% to the StakingContract
         uint256 treasuryBalance = DRIP.balanceOf(address(this));
+        
+        // A portion of the treasury balance is paid out according to the rate
+        uint256 share = treasuryBalance.mul(PAYOUT_RATE).div(100).div(24 hours);
 
-        DRIP.transfer(stakingContract, treasuryBalance.div(100));
+        uint256 claimAmount;
 
-        lastDepositTime = block.timestamp;
+        if (lastPayoutTime == 0) {
+            // Get claimAmount as payout Percent of TreasuryBalance
+            claimAmount = treasuryBalance.mul(PAYOUT_RATE).div(100);
+        } else {
+            // Get claimAmount from the passed time from lastPayoutTime
+            claimAmount = share.mul(block.timestamp - lastPayoutTime);
+        }
+
+        if (claimAmount > treasuryBalance) {
+            claimAmount = treasuryBalance;
+        }
+
+        DRIP.transfer(stakingContract, claimAmount);
+
+        // Get Last Deposit time as blockTimestamp
+        lastPayoutTime = block.timestamp;
     }
 }
