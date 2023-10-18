@@ -187,7 +187,7 @@ contract Treasury is Ownable {
         PAYOUT_RATE = _newRate;
     }
 
-    /// @notice Set PayoutRate Function.
+    /// @notice Claim Function.
     function claim() external {
         
         // Check if now is after COOL_DOWN time

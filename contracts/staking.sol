@@ -222,7 +222,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
     ///   pending reward = (user share * pool.accDripPerShare) - user.rewardDebt
     ///
     ///   Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-    ///   1. The pool's `accDripPerShare` (and `lastRewardBlock`) gets updated.
+    ///   1. The pool's `accDripPerShare` (and `lastRewardTime`) gets updated.
     ///   2. User receives the pending reward sent to his/her address.
     ///   3. User's `amount` gets updated. Pool's `totalBoostedShare` gets updated.
     ///   4. User's `rewardDebt` gets updated.
@@ -234,13 +234,13 @@ contract DripStaking is Ownable, ReentrancyGuard {
 
     // @notice Accumulated DRIPs per share, times 1e12.
     uint256 public accDripPerShare;
-    // @notice Last block number that pool update action is executed.
-    uint256 public lastRewardBlock;
+    // @notice Last block time that pool update action is executed.
+    uint256 public lastRewardTime;
     // @notice The total amount of user shares in each pool. After considering the share boosts.
     uint256 public totalBoostedShare;
-    // @notice The DRIP amount to be distributed every block.
-    uint256 public dripPerBlock;
-    
+    // @notice The DRIP amount to be distributed every second.
+    uint256 public dripPerSecond;
+    //// For inflation 5% we can set as dripPerSecond = totalSupply * (5/100) / (365 days)
 
     /// @notice Address of the LP token for each MCV2 pool.
     IBEP20 public lpToken;
@@ -259,7 +259,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
     /// @notice Match multiplier to each user.
     mapping(address => uint256) public userMultiplier;
     
-    event UpdatePool(uint256 lastRewardBlock, uint256 lpSupply, uint256 accDripPerShare);
+    event UpdatePool(uint256 lastRewardTime, uint256 lpSupply, uint256 accDripPerShare);
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
 
@@ -278,9 +278,9 @@ contract DripStaking is Ownable, ReentrancyGuard {
         uint256 lpSupply = totalBoostedShare;
 
 
-        if (block.number > lastRewardBlock && totalBoostedShare != 0) {
-            uint256 multiplier = block.number.sub(lastRewardBlock);
-            uint256 dripReward = multiplier.mul(dripPerBlock);
+        if (block.timestamp > lastRewardTime && totalBoostedShare != 0) {
+            uint256 multiplier = block.timestamp.sub(lastRewardTime);
+            uint256 dripReward = multiplier.mul(dripPerSecond);
             accPerShare = accPerShare.add(dripReward.mul(ACC_DRIP_PRECISION).div(lpSupply));
         }
 
@@ -290,18 +290,18 @@ contract DripStaking is Ownable, ReentrancyGuard {
 
     /// @notice Update reward variables for the given pool.
     function updatePool() public {
-        if (block.number > lastRewardBlock) {
+        if (block.timestamp > lastRewardTime) {
             uint256 lpSupply = totalBoostedShare;
 
             if (lpSupply > 0 ) {
-                uint256 multiplier = block.number.sub(lastRewardBlock);
-                uint256 dripReward = multiplier.mul(dripPerBlock);
+                uint256 multiplier = block.timestamp.sub(lastRewardTime);
+                uint256 dripReward = multiplier.mul(dripPerSecond);
 
                 accDripPerShare = accDripPerShare.add((dripReward.mul(ACC_DRIP_PRECISION).div(lpSupply)));
             }
-            lastRewardBlock = block.number;
+            lastRewardTime = block.timestamp;
 
-            emit UpdatePool(lastRewardBlock, lpSupply, accDripPerShare);
+            emit UpdatePool(lastRewardTime, lpSupply, accDripPerShare);
         }
     }
 
