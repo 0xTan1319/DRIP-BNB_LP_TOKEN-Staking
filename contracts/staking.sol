@@ -398,7 +398,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
 
     /// @notice Update TREASURY contract.
     /// @param _newTreasury Treasury Contract address.
-    function settlePendingDrip(address _newTreasury) external onlyOwner {
+    function updateTreasury(address _newTreasury) external onlyOwner {
         require(_newTreasury != address(0) && _newTreasury != address(TREASURY), "Not Zero Address");
         TREASURY = ITreasury(_newTreasury);
     }
