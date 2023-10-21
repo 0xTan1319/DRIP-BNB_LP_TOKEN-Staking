@@ -209,7 +209,7 @@ library SafeMath {
 }
 
 
-contract DripStaking is Ownable, ReentrancyGuard {
+contract LPStaking is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
 
     /// @notice Info of each Staking user.
@@ -248,8 +248,6 @@ contract DripStaking is Ownable, ReentrancyGuard {
     // @notice Last mint DRIP time.
     uint256 public lastMintTime;
 
-    //// For inflation 5% we can set as dripPerSecond = totalSupply * (5/100) / (365 days)
-
     /// @notice Address of the LP token for each MCV2 pool.
     IBEP20 public lpToken;
     /// @notice Address of DRIP contract.
@@ -274,7 +272,8 @@ contract DripStaking is Ownable, ReentrancyGuard {
     constructor() Ownable(_msgSender()) {
         // DRIP    = IBEP20(0x20f663CEa80FaCE82ACDFA3aAE6862d246cE0333);
         DRIP    = IBEP20(0x3e720E59E680CBaeEB11AD456faf3FA6F3801EDC);
-        lpToken = IBEP20(0xB17E674a4B28958A0eF77E608B4fE94c23AceE29);
+        // lpToken = IBEP20(0xB17E674a4B28958A0eF77E608B4fE94c23AceE29);
+        lpToken = IBEP20(0x16567F9Cc0cb4858bcC729285fC836006eE9c81b);
 
         totalSupplyYear = DRIP.totalSupply();
         lastYearTime = block.timestamp;
@@ -288,14 +287,14 @@ contract DripStaking is Ownable, ReentrancyGuard {
         uint256 lpSupply = totalBoostedShare;
 
 
-        if (block.number > lastRewardBlock && totalBoostedShare != 0) {
+        if (block.number > lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = block.number.sub(lastRewardBlock);
             uint256 dripReward = multiplier.mul(dripPerBlock);
             accPerShare = accPerShare.add(dripReward.mul(ACC_DRIP_PRECISION).div(lpSupply));
         }
 
         uint256 boostedAmount = user.amount.mul(userMultiplier[_user]).div(BOOST_PRECISION);
-        return boostedAmount.mul(accPerShare).sub(user.rewardDebt);
+        return boostedAmount.mul(accPerShare).div(ACC_DRIP_PRECISION).sub(user.rewardDebt);
     }
 
     /// @notice Update reward variables for the given pool.
@@ -332,7 +331,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[msg.sender];
 
         if (user.amount > 0) {
-            settlePendingDrip(msg.sender, multiplier);
+            settlePendingDrip(msg.sender);
         }
 
         if (_amount > 0) {
@@ -340,6 +339,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
             lpToken.transferFrom(msg.sender, address(this), _amount);
             _amount = lpToken.balanceOf(address(this)).sub(before);
             user.amount = user.amount.add(_amount);
+            userMultiplier[msg.sender] = multiplier;
 
             // Update total boosted share.
             totalBoostedShare = totalBoostedShare.add(_amount.mul(multiplier).div(BOOST_PRECISION));
@@ -362,7 +362,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
 
         uint256 multiplier = userMultiplier[msg.sender];
 
-        settlePendingDrip(msg.sender, multiplier);
+        settlePendingDrip(msg.sender);
 
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
@@ -381,14 +381,12 @@ contract DripStaking is Ownable, ReentrancyGuard {
   
     /// @notice Settles, distribute the pending DRIP rewards for given user.
     /// @param _user The user address for settling rewards.
-    /// @param _boostMultiplier The user boost multiplier in specific pool.
     function settlePendingDrip(
-        address _user,
-        uint256 _boostMultiplier
+        address _user
     ) internal {
         UserInfo memory user = userInfo[_user];
 
-        uint256 boostedAmount = user.amount.mul(_boostMultiplier).div(BOOST_PRECISION);
+        uint256 boostedAmount = user.amount.mul(userMultiplier[_user]).div(BOOST_PRECISION);
         uint256 accDrip = boostedAmount.mul(accDripPerShare).div(ACC_DRIP_PRECISION);
         uint256 pending = accDrip.sub(user.rewardDebt);
         
@@ -413,5 +411,12 @@ contract DripStaking is Ownable, ReentrancyGuard {
     function updateTreasury(address _newTreasury) external onlyOwner {
         require(_newTreasury != address(0) && _newTreasury != address(TREASURY), "Not Zero Address");
         TREASURY = ITreasury(_newTreasury);
+    }
+
+    /// @notice Update dripPerBlock.
+    /// @param _newDrip new DripPerBlock amount.
+    function updateDripPerBlock(uint256 _newDrip) external onlyOwner {
+        require(_newDrip != 0 && _newDrip != dripPerBlock, "Not Zero Amount");
+        dripPerBlock = _newDrip;
     }
 }

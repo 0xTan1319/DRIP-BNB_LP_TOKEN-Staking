@@ -151,7 +151,7 @@ contract Treasury is Ownable {
     IVault internal VAULT; // address of the Vault contract 
 
     address public stakingContract;
-
+    address public DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
     uint256 public lastTaxTransferTime;
     uint256 public lastPayoutTime;
 
@@ -161,8 +161,11 @@ contract Treasury is Ownable {
 
     // We receive Drip token on this vault
     constructor() Ownable(_msgSender()) {
-        DRIP = IBEP20(0x20f663CEa80FaCE82ACDFA3aAE6862d246cE0333);
-        VAULT = IVault(0xBFF8a1F9B5165B787a00659216D7313354D25472);
+        // DRIP = IBEP20(0x20f663CEa80FaCE82ACDFA3aAE6862d246cE0333);
+        // VAULT = IVault(0xBFF8a1F9B5165B787a00659216D7313354D25472);
+
+        DRIP = IBEP20(0x3e720E59E680CBaeEB11AD456faf3FA6F3801EDC);
+        VAULT = IVault(0x47a8aB273dB1b2e45F97d01a09Fcf5cA696Fb997);
     }
 
     /// @notice Set Staking Contract address Function.
@@ -187,7 +190,7 @@ contract Treasury is Ownable {
         PAYOUT_RATE = _newRate;
     }
 
-    /// @notice Claim Function.
+    /// @notice Claim Reward Function.
     function claim() external {
         
         // Check if now is after COOL_DOWN time
@@ -201,7 +204,7 @@ contract Treasury is Ownable {
             uint256 pureBalance = taxBalance.div(10);
 
             // Burn 90% of the Tax Vault 
-            DRIP.transfer(address(0), taxBalance.sub(pureBalance));
+            DRIP.transfer(DEAD_ADDRESS, taxBalance.sub(pureBalance));
 
             lastTaxTransferTime = block.timestamp;
         }
