@@ -230,7 +230,6 @@ contract DripStaking is Ownable, ReentrancyGuard {
         uint256 amount;
         uint256 rewardDebt;
         uint256 boostMultiplier;
-        uint256 earnedDrip;
         uint256 lockStartTime;
         uint256 lockEndTime;
     }
@@ -269,13 +268,18 @@ contract DripStaking is Ownable, ReentrancyGuard {
     uint256 public constant MIN_LOCK_DURATION = 1 weeks;
     uint256 public constant MAX_LOCK_DURATION = 52 weeks;
 
-    /// @notice Info of each pool user.
-    mapping(address => UserInfo) public userInfo;
-    /// @notice Match multiplier to each user.
-    mapping(address => uint256) public userMultiplier;
+    /// @notice Info of each pool user & stake Id.
+    mapping(address => mapping (uint256 => UserInfo)) public userInfo;
+    // @notice The Current Staked Id.
+    mapping(address => uint256) public currentStakedId;
+    /// @notice Match earned Drip to each user.
+    mapping(address => uint256) public earnedDrip;
+    /// @notice Match staked LP to each user.
+    mapping(address => uint256) public stakedAmount;
     
     event UpdatePool(uint256 lastRewardBlock, uint256 lpSupply, uint256 accDripPerShare);
     event Deposit(address indexed user, uint256 amount);
+    event Claim(address indexed user, uint256 id);
     event Withdraw(address indexed user, uint256 amount);
 
     constructor() Ownable(_msgSender()) {
@@ -290,11 +294,11 @@ contract DripStaking is Ownable, ReentrancyGuard {
 
     /// @notice View function for checking pending DRIP rewards.
     /// @param _user Address of the user.
-    function pendingDrip(address _user) external view returns (uint256) {
-        UserInfo memory user = userInfo[_user];
+    /// @param _stakeId New stake id.
+    function pendingDrip(address _user, uint256 _stakeId) external view returns (uint256) {
+        UserInfo memory user = userInfo[_user][_stakeId];
         uint256 accPerShare = accDripPerShare;
         uint256 lpSupply = totalBoostedShare;
-
 
         if (block.number > lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = block.number.sub(lastRewardBlock);
@@ -302,7 +306,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
             accPerShare = accPerShare.add(dripReward.mul(ACC_DRIP_PRECISION).div(lpSupply));
         }
 
-        uint256 boostedAmount = user.amount.mul(userMultiplier[_user]).div(BOOST_PRECISION);
+        uint256 boostedAmount = user.amount.mul(user.boostMultiplier).div(BOOST_PRECISION);
         return boostedAmount.mul(accPerShare).div(ACC_DRIP_PRECISION).sub(user.rewardDebt);
     }
 
@@ -333,51 +337,31 @@ contract DripStaking is Ownable, ReentrancyGuard {
     }
 
 
-    /// @notice Deposit LP tokens to pool.
+    /// @notice stake LP tokens to pool.
+    /// @param _amount LP token's lock amount.
     /// @param _lockDuration LP token's lock duration.
-    function deposit(uint256 _amount, uint256 _lockDuration) external nonReentrant {
+    function stake(uint256 _amount, uint256 _lockDuration) external nonReentrant {
         updatePool();
-        UserInfo storage user = userInfo[msg.sender];
+        address sender = msg.sender;
+        UserInfo storage user = userInfo[sender][currentStakedId[sender]];
 
-        if (user.amount > 0) {
-            settlePendingDrip(msg.sender);
-        }
-
-        // Calculate the total lock duration and check whether the lock duration meets the conditions.
-        uint256 totalLockDuration = _lockDuration;
-        if (user.lockEndTime >= block.timestamp) {
-            // Adding funds during the lock duration is equivalent to re-locking the position, needs to update some variables.
-            if (_amount > 0) {
-                user.lockStartTime = block.timestamp;
-            }
-            totalLockDuration += user.lockEndTime - user.lockStartTime;
-        }
-
-        require(_lockDuration == 0 || totalLockDuration >= MIN_LOCK_DURATION, "Minimum lock period is one week");
-        require(totalLockDuration <= MAX_LOCK_DURATION, "Maximum lock period exceeded");
-
-        if (totalLockDuration > maxLockDuration) {
-            maxLockDuration = totalLockDuration;
-        }
+        require(_lockDuration >= MIN_LOCK_DURATION, "Minimum lock period is one week");
+        require(_lockDuration <= MAX_LOCK_DURATION, "Maximum lock period exceeded");
 
         // Update lock duration.
         if (_lockDuration > 0) {
-            if (user.lockEndTime < block.timestamp) {
-                user.lockStartTime = block.timestamp;
-                user.lockEndTime = block.timestamp + _lockDuration;
-            } else {
-                user.lockEndTime += _lockDuration;
-            }
+            user.lockStartTime = block.timestamp;
+            user.lockEndTime = block.timestamp + _lockDuration;
         }
 
-        uint256 multiplier = getBoostMultiplier(msg.sender, _lockDuration, _amount);
+        uint256 multiplier = getBoostMultiplier(sender, _lockDuration, _amount);
 
         if (_amount > 0) {
             uint256 before = lpToken.balanceOf(address(this));
-            lpToken.transferFrom(msg.sender, address(this), _amount);
+            lpToken.transferFrom(sender, address(this), _amount);
             _amount = lpToken.balanceOf(address(this)).sub(before);
             user.amount = user.amount.add(_amount);
-            userMultiplier[msg.sender] = multiplier;
+            user.boostMultiplier = multiplier;
 
             // Update total boosted share.
             totalBoostedShare = totalBoostedShare.add(_amount.mul(multiplier).div(BOOST_PRECISION));
@@ -387,45 +371,70 @@ contract DripStaking is Ownable, ReentrancyGuard {
             ACC_DRIP_PRECISION
         );
 
-        emit Deposit(msg.sender, _amount);
+        stakedAmount[sender] += _amount;
+        currentStakedId[sender] += 1;
+
+        if(maxLockDuration < _lockDuration) {
+            maxLockDuration = _lockDuration;
+        }
+
+        emit Deposit(sender, _amount);
     }
 
-    /// @notice Withdraw LP tokens from pool.
-    /// @param _amount Amount of LP tokens to withdraw.
-    function withdraw(uint256 _amount) external nonReentrant {
+    /// @notice claim Rewaqrd from pool.
+    /// @param _stakedId Id of Pool.
+    function claim(uint256 _stakedId) external nonReentrant {
         updatePool();
-        UserInfo storage user = userInfo[msg.sender];
-        require(user.lockEndTime <= block.timestamp, "withdraw: locked");
+        address sender = msg.sender;
+        UserInfo storage user = userInfo[sender][_stakedId];
+        uint256 multiplier = user.boostMultiplier;
 
-        require(user.amount >= _amount, "withdraw: Insufficient");
-
-        uint256 multiplier = userMultiplier[msg.sender];
-
-        settlePendingDrip(msg.sender);
-
-        if (_amount > 0) {
-            user.amount = user.amount.sub(_amount);
-            lpToken.transfer(msg.sender, _amount);
-        }
+        settlePendingDrip(sender, _stakedId);
 
         user.rewardDebt = user.amount.mul(multiplier).div(BOOST_PRECISION).mul(accDripPerShare).div(
             ACC_DRIP_PRECISION
         );
-        totalBoostedShare = totalBoostedShare.sub(
-            _amount.mul(multiplier).div(BOOST_PRECISION)
-        );
 
-        emit Withdraw(msg.sender, _amount);
+        emit Claim(sender, _stakedId);
+    }
+
+    /// @notice Withdraw LP tokens from pool.
+    /// @param _stakedId Staked Id to withdraw.
+    function withdraw(uint256 _stakedId) external nonReentrant {
+        updatePool();
+        address sender = msg.sender;
+        UserInfo storage user = userInfo[sender][_stakedId];
+
+        require(user.lockEndTime <= block.timestamp, "withdraw: locked");
+
+        uint256 multiplier = user.boostMultiplier;
+
+        settlePendingDrip(sender, _stakedId);
+        
+        totalBoostedShare = totalBoostedShare.sub(
+            user.amount.mul(multiplier).div(BOOST_PRECISION)
+        );
+        currentStakedId[sender]--;
+        stakedAmount[sender] -= user.amount;
+
+        UserInfo storage lastUser = userInfo[sender][currentStakedId[sender]];
+        user = lastUser;
+
+        delete userInfo[sender][currentStakedId[sender]];
+
+        emit Withdraw(sender, _stakedId);
     }
   
     /// @notice Settles, distribute the pending DRIP rewards for given user.
     /// @param _user The user address for settling rewards.
+    /// @param _stakedId The stakedId for settling rewards.
     function settlePendingDrip(
-        address _user
+        address _user,
+        uint256 _stakedId
     ) internal {
-        UserInfo storage user = userInfo[_user];
+        UserInfo storage user = userInfo[_user][_stakedId];
 
-        uint256 boostedAmount = user.amount.mul(userMultiplier[_user]).div(BOOST_PRECISION);
+        uint256 boostedAmount = user.amount.mul(user.boostMultiplier).div(BOOST_PRECISION);
         uint256 accDrip = boostedAmount.mul(accDripPerShare).div(ACC_DRIP_PRECISION);
         uint256 pending = accDrip.sub(user.rewardDebt);
         
@@ -433,7 +442,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
         _safeTransfer(_user, pending);
 
         // Add pending Drip amount to the earnedDrip
-        user.earnedDrip += pending;
+        earnedDrip[_user] += pending;
         
     }
 
@@ -472,16 +481,16 @@ contract DripStaking is Ownable, ReentrancyGuard {
         uint256 _duration,
         uint256 _amount
     ) public view returns (uint256) {
-        UserInfo storage user = userInfo[_user];
+        uint256 amount = stakedAmount[_user];
 
-        if (_duration == 0) return BOOST_PRECISION;
-        if (user.amount == 0 || block.timestamp >= user.lockEndTime) return BOOST_PRECISION;
+        if (_duration == 0 || amount == 0 || maxLockDuration == 0) return BOOST_PRECISION;
 
         uint256 totalLiquidity = lpToken.totalSupply();
         uint256 totalLockAmount = lpToken.balanceOf(address(this));
+        if (totalLiquidity == 0 || totalLockAmount == 0) return BOOST_PRECISION;
 
         uint256 multiplier =  _amount.mul(_duration).mul(BOOST_PRECISION).div(totalLiquidity).div(maxLockDuration);
-        uint256 boostMultiplier = multiplier.mul(user.amount).div(totalLockAmount);
+        uint256 boostMultiplier = multiplier.mul(amount).div(totalLockAmount);
 
         // should "*" BOOST_PRECISION
         return boostMultiplier + BOOST_PRECISION;
