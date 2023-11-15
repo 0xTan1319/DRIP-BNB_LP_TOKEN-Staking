@@ -265,8 +265,14 @@ contract DripStaking is Ownable, ReentrancyGuard {
     /// @notice 
     uint256 public constant BOOST_PRECISION = 1e12;
     /// @notice
+    uint256 public constant DURATION_FACTOR = 365 days;
+
+    /// @notice
     uint256 public constant MIN_LOCK_DURATION = 1 weeks;
     uint256 public constant MAX_LOCK_DURATION = 52 weeks;
+
+    /// @notice 
+    uint256 public BOOST_WEIGHT = 20e12;
 
     /// @notice Info of each pool user & stake Id.
     mapping(address => mapping (uint256 => UserInfo)) public userInfo;
@@ -354,7 +360,7 @@ contract DripStaking is Ownable, ReentrancyGuard {
             user.lockEndTime = block.timestamp + _lockDuration;
         }
 
-        uint256 multiplier = getBoostMultiplier(sender, _lockDuration, _amount);
+        uint256 multiplier = getBoostMultiplier(sender, _lockDuration);
 
         if (_amount > 0) {
             uint256 before = lpToken.balanceOf(address(this));
@@ -475,24 +481,24 @@ contract DripStaking is Ownable, ReentrancyGuard {
     /// @notice Get the boost calculation.
     /// @param _user user's address.
     /// @param _duration user's lock duration.
-    /// @param _amount lock amount for user.
     function getBoostMultiplier(
         address _user,
-        uint256 _duration,
-        uint256 _amount
+        uint256 _duration
     ) public view returns (uint256) {
-        uint256 amount = stakedAmount[_user];
 
-        if (_duration == 0 || amount == 0 || maxLockDuration == 0) return BOOST_PRECISION;
+        if (_duration == 0) return BOOST_PRECISION;
 
-        uint256 totalLiquidity = lpToken.totalSupply();
-        uint256 totalLockAmount = lpToken.balanceOf(address(this));
-        if (totalLiquidity == 0 || totalLockAmount == 0) return BOOST_PRECISION;
-
-        uint256 multiplier =  _amount.mul(_duration).mul(BOOST_PRECISION).div(totalLiquidity).div(maxLockDuration);
-        uint256 boostMultiplier = multiplier.mul(amount).div(totalLockAmount);
+        uint256 multiplier =  _duration.mul(BOOST_WEIGHT).div(DURATION_FACTOR);
 
         // should "*" BOOST_PRECISION
-        return boostMultiplier + BOOST_PRECISION;
+        return multiplier + BOOST_PRECISION;
     }
+
+    /// @notice Set BOOST_WEIGHT
+    /// @param _boostWeight new BoostWeight amount.
+     function setBoostWeight(uint256 _boostWeight) external onlyOwner {
+        require(_boostWeight <= BOOST_PRECISION, "BOOST_WEIGHT cannot be more than BOOST_WEIGHT_LIMIT");
+        BOOST_WEIGHT = _boostWeight;
+    }
+
 }

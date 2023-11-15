@@ -5,9 +5,11 @@ async function main() {
 
   const lpStaking = await ethers.deployContract("LPStaking");
   const treasury =  await ethers.deployContract("Treasury");
+  const vault = await ethers.deployContract("Vault");
 
   console.log("LP Staking Contract address:", await lpStaking.getAddress());
   console.log("Treasury Contract address:", await treasury.getAddress());
+  console.log("Tax Vault Contract address:", await vault.getAddress());
 
 }
 
