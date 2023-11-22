@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.19;
+import "hardhat/console.sol";
 
 import "./interfaces/IBEP20.sol";
 import "./interfaces/IVault.sol";
@@ -160,12 +161,17 @@ contract Treasury is Ownable {
 
 
     // We receive Drip token on this vault
-    constructor() Ownable(_msgSender()) {
+    constructor(address _dripToken, address _vault) Ownable(_msgSender()) {
+        /// Mainnet
         // DRIP = IBEP20(0x20f663CEa80FaCE82ACDFA3aAE6862d246cE0333);
         // VAULT = IVault(0xBFF8a1F9B5165B787a00659216D7313354D25472);
-
-        DRIP = IBEP20(0x3e720E59E680CBaeEB11AD456faf3FA6F3801EDC);
-        VAULT = IVault(0x47a8aB273dB1b2e45F97d01a09Fcf5cA696Fb997);
+        
+        /// Testnet
+        // DRIP = IBEP20(0x3e720E59E680CBaeEB11AD456faf3FA6F3801EDC);
+        // VAULT = IVault(0x47a8aB273dB1b2e45F97d01a09Fcf5cA696Fb997);
+        
+        DRIP = IBEP20(_dripToken);
+        VAULT = IVault(_vault);
     }
 
     /// @notice Set Staking Contract address Function.

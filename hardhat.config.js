@@ -11,14 +11,15 @@ const PRIVATE_KEY = "";
 
 module.exports = {
   solidity: "0.8.19",
-  networks: {
-    bsctest: {
-      url: 'https://data-seed-prebsc-1-s1.binance.org:8545/',
-      accounts: [PRIVATE_KEY]
-    },
-    bsc: {
-      url: 'https://nodes.pancakeswap.info',
-      accounts: [PRIVATE_KEY]
-    }
-  }
+  defaultNetwork: "hardhat",
+  // networks: {
+  //   bsctest: {
+  //     url: 'https://data-seed-prebsc-1-s1.binance.org:8545/',
+  //     accounts: [PRIVATE_KEY]
+  //   },
+  //   bsc: {
+  //     url: 'https://nodes.pancakeswap.info',
+  //     accounts: [PRIVATE_KEY]
+  //   }
+  // }
 };
