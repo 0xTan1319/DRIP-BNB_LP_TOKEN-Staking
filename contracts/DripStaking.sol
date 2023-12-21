@@ -434,7 +434,12 @@ contract DripStaking is Ownable, ReentrancyGuard {
         stakedAmount[sender] -= user.amount;
 
         UserInfo storage lastUser = userInfo[sender][currentStakedId[sender]];
-        user = lastUser;
+       
+        user.amount = lastUser.amount;
+        user.rewardDebt = lastUser.rewardDebt;
+        user.boostMultiplier = lastUser.boostMultiplier;
+        user.lockStartTime = lastUser.lockStartTime;
+        user.lockEndTime = lastUser.lockEndTime;
 
         delete userInfo[sender][currentStakedId[sender]];
 
