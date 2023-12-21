@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("hardhat-faucet");
 
 
 // Replace this private key with your Sepolia account private key
@@ -12,14 +13,18 @@ const PRIVATE_KEY = "";
 module.exports = {
   solidity: "0.8.19",
   defaultNetwork: "hardhat",
-  // networks: {
-  //   bsctest: {
-  //     url: 'https://data-seed-prebsc-1-s1.binance.org:8545/',
-  //     accounts: [PRIVATE_KEY]
-  //   },
-  //   bsc: {
-  //     url: 'https://nodes.pancakeswap.info',
-  //     accounts: [PRIVATE_KEY]
-  //   }
-  // }
+  networks: {
+    bsctest: {
+      url: 'https://data-seed-prebsc-1-s1.binance.org:8545/',
+      accounts: [PRIVATE_KEY]
+    },
+    bsc: {
+      url: 'https://nodes.pancakeswap.info',
+      accounts: [PRIVATE_KEY]
+    },
+    bbfork: {
+      url: 'https://rpc.buildbear.io/equivalent-han-solo-113f85af',
+      accounts: [PRIVATE_KEY]
+    }
+  }
 };
