@@ -4,12 +4,14 @@ async function main() {
 
   console.log("RPC Passed. ✅");
 
-  const signers = await ethers.getSigners();
-  console.log(signers[0].provider);
+  const lpStaking = await ethers.deployContract("LPStaking");
+  const treasury =  await ethers.deployContract("Treasury");
+  const vault = await ethers.deployContract("Vault");
 
-  const initialMint = 100000;
-  const initialTaxAmount = 1000000000000000000n;
-  const initialDripPerBlock = 35000000000000000n;
+  console.log("LP Staking Contract address:", await lpStaking.getAddress());
+  console.log("Treasury Contract address:", await treasury.getAddress());
+  console.log("Tax Vault Contract address:", await vault.getAddress());
+
 
   const dripToken = await ethers.deployContract("DripToken", [initialMint]);
   await dripToken.waitForDeployment();
